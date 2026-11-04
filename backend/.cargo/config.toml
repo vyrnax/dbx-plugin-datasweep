@@ -1,0 +1,15 @@
+# 本地与 CI 都要能直接 `cargo test` / `cargo build`，但官方 `dbx-plugin-sdk` 并没有发布到
+# crates.io（crates.io 查 dbx-plugin-sdk / dbx_plugin_sdk 全 404）。上游官方 CLI 的做法是：
+# `dbx-plugin package` 在调用 cargo 时追加
+#   --config 'patch.crates-io.dbx-plugin-sdk.path="<SDK_ROOT>/plugins/sdk/rust/dbx-plugin-sdk"'
+# —— 命令行 `--config` 优先级高于本文件，所以打包路径仍然是上游说了算，本文件只补齐
+# 「不经过 packager 的裸 cargo 调用」：单元测试、clippy、以及 e2e 脚本需要的 debug/release 产物。
+#
+# 没有这条 patch 时，裸 `cargo test` 直接失败：
+#   error: no matching package named `dbx-plugin-sdk` found
+#   location searched: crates.io index
+#
+# vendor/dbx-plugin-sdk 是上游 SDK 的**字节级复制**，禁止修改（见 vendor/dbx-plugin-sdk/VENDOR.md）。
+# 升级方式：重装 @dbx-app/plugin-cli 后重新覆盖复制，并核对 VENDOR.md 记录的 SHA-256。
+[patch.crates-io]
+dbx-plugin-sdk = { path = "vendor/dbx-plugin-sdk" }

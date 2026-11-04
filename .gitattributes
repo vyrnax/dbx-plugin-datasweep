@@ -1,0 +1,23 @@
+# 包内字节可重现的前提：打包进 .dbxp 的文本资源一律 LF
+*.json text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.svg text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.py text eol=lf
+*.yml text eol=lf
+*.rs text eol=lf
+Cargo.lock text eol=lf
+*.dbxp -text
+
+# 无扩展名与 *.mjs 的闸门脚本同样钉死 LF：本机 core.autocrlf=true，
+# 不写规则的话 checkout 出来是 CRLF，与 Linux CI 上的字节不一致。
+LICENSE text eol=lf
+*.mjs text eol=lf
+
+# vendor 的上游 SDK 必须与上游**逐字节一致**，否则 VENDOR.md 里记录的 SHA-256
+# 与 `fc /b` 核对必然失败（上游是 LF，Windows 默认 checkout 会转成 CRLF）。
+# -text 让 git 完全不碰行尾，任何平台 checkout 都拿到同一份字节。
+backend/vendor/** -text

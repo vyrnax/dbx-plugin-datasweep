@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>扫雷</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <span class="brand">
+          <!--
+            图标必须是**内联 SVG**，不能写 <img src="icons/...">：
+            宿主把插件 UI 装进 sandbox iframe，CSP 是
+              default-src 'none'; img-src data: blob:
+            而宿主只把 <script src> 与 <link rel=stylesheet> 内联进沙箱文档，
+            **不处理 <img src>** ⇒ 相对路径图片一律被拦（真机截图里就是裂图）。
+            已上架的翻译插件同样是内联 SVG。
+            源文件仍在 ui/icons/brand.svg，_releasecheck.py 校验两边不漂移。
+          -->
+          <svg class="brand-icon" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+            <defs>
+                <linearGradient id="tileFace" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#F0F0F0"/>
+                  <stop offset="100%" stop-color="#D0D0D0"/>
+                </linearGradient>
+                <linearGradient id="tileEdge" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#FFFFFF"/>
+                  <stop offset="100%" stop-color="#A0A0A0"/>
+                </linearGradient>
+              </defs>
+              <rect x="4" y="4" width="92" height="92" rx="16" fill="#C0C0C0" stroke="#808080" stroke-width="3"/>
+              <rect x="8" y="8" width="84" height="84" rx="12" fill="#E8E8E8" stroke="#FFFFFF" stroke-width="2"/>
+              <g transform="translate(14, 14)">
+                <g transform="translate(0, 0)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                  <text x="11.5" y="18" font-family="Arial, sans-serif" font-weight="bold" font-size="16" fill="#0000FF" text-anchor="middle">1</text>
+                </g>
+                <g transform="translate(25, 0)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                  <text x="11.5" y="18" font-family="Arial, sans-serif" font-weight="bold" font-size="16" fill="#000000" text-anchor="middle">?</text>
+                </g>
+                <g transform="translate(50, 0)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                  <line x1="11.5" y1="5" x2="11.5" y2="19" stroke="#000" stroke-width="2.5" stroke-linecap="round"/>
+                  <polygon points="11.5,6 4,9.5 11.5,13" fill="#FF0000"/>
+                  <rect x="7" y="17" width="9" height="3" fill="#000" rx="1"/>
+                </g>
+                <g transform="translate(0, 25)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                </g>
+                <g transform="translate(25, 25)">
+                  <rect width="23" height="23" fill="#FF0000" stroke="#B0B0B0" stroke-width="1.5"/>
+                  <circle cx="11.5" cy="11.5" r="5.5" fill="#000000" />
+                  <path d="M 11.5 3 L 11.5 20 M 3 11.5 L 20 11.5 M 5.5 5.5 L 17.5 17.5 M 5.5 17.5 L 17.5 5.5" stroke="#000000" stroke-width="2" stroke-linecap="round"/>
+                  <circle cx="9.5" cy="9.5" r="1.5" fill="#FFFFFF" />
+                </g>
+                <g transform="translate(50, 25)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                  <text x="11.5" y="18" font-family="Arial, sans-serif" font-weight="bold" font-size="16" fill="#008000" text-anchor="middle">2</text>
+                </g>
+                <g transform="translate(0, 50)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                  <text x="11.5" y="18" font-family="Arial, sans-serif" font-weight="bold" font-size="16" fill="#FF0000" text-anchor="middle">3</text>
+                </g>
+                <g transform="translate(25, 50)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                </g>
+                <g transform="translate(50, 50)">
+                  <rect width="23" height="23" fill="url(#tileFace)" stroke="url(#tileEdge)" stroke-width="1.5"/>
+                  <text x="11.5" y="18" font-family="Arial, sans-serif" font-weight="bold" font-size="16" fill="#000080" text-anchor="middle">4</text>
+                </g>
+              </g>
+          </svg>
+          <strong data-i18n="appTitle">扫雷</strong>
+        </span>
+      </header>
+
+      <p id="txtNotice" class="notice" hidden></p>
+
+      <main id="main">
+        <div class="board-column">
+          <div class="counter-bar">
+            <span class="led" id="statMines">040</span>
+            <button id="btnApply" class="icon-button" type="button">
+              <!-- 同上：内联 SVG，理由见品牌图标处的注释 -->
+              <svg viewBox="0 0 1024 1024" aria-hidden="true" focusable="false">
+              <path fill="#FFFF00" d="M512.016 64C264.976 64 64.016 264.96 64.016 512 64.016 759.024 264.976 960 512.016 960 759.04 960 960 759.024 960 512 960 264.96 759.04 64 512.016 64Z"/> <path fill="#000000" fill-rule="evenodd" d="M512.016 1024C229.232 1024 0.016 794.784 0.016 512 0.016 229.216 229.232 0 512.016 0 794.784 0 1024 229.216 1024 512 1024 794.784 794.784 1024 512.016 1024ZM512.016 64C264.976 64 64.016 264.96 64.016 512 64.016 759.024 264.976 960 512.016 960 759.04 960 960 759.024 960 512 960 264.96 759.04 64 512.016 64ZM510.336 833.456C509.056 833.456 507.744 833.488 506.448 833.488 310.992 833.488 229.024 657.12 225.616 649.552 218.336 633.424 225.488 614.496 241.584 607.216 257.712 599.968 276.576 607.088 283.888 623.088 286.64 629.12 352.928 769.488 506.576 769.488 507.584 769.488 508.576 769.456 509.584 769.456 672.896 767.552 738.368 624.768 739.024 623.344 746.176 607.216 765.024 599.872 781.264 607.152 797.392 614.336 804.672 633.248 797.456 649.408 794.176 656.8 714.208 831.056 510.336 833.456ZM671.504 479.84C636.224 479.84 607.664 451.232 607.664 415.984 607.664 380.768 636.224 352.176 671.504 352.176 706.768 352.176 735.344 380.768 735.344 415.984 735.344 451.232 706.768 479.84 671.504 479.84ZM351.504 479.84C316.224 479.84 287.664 451.232 287.664 415.984 287.664 380.768 316.224 352.176 351.504 352.176 386.768 352.176 415.344 380.768 415.344 415.984 415.344 451.232 386.768 479.84 351.504 479.84Z"/>
+              </svg>
+              <span class="sr-only" data-i18n="apply">开这一局</span>
+            </button>
+            <span class="led" id="statTime">00:00.0</span>
+          </div>
+
+          <section id="stage" class="stage">
+            <canvas id="board"></canvas>
+          </section>
+
+          <p id="statStatus" class="status-bar" data-i18n="statusReady">点击任意格子开始</p>
+        </div>
+
+        <aside id="side" class="side">
+
+          <section id="sectionSettings" class="panel">
+            <label class="field block">
+              <span data-i18n="preset">难度</span>
+              <select id="selPreset">
+                <option value="beginner" data-i18n-option="presetBeginner">初级</option>
+                <!-- 默认档位必须与后端 store::DEFAULT_PRESET 一致（intermediate）。
+                     JS 回填之前浏览器显示的是带 selected 的这一项，
+                     少了 selected 就会先闪「初级」，读偏好失败时更会一直停在初级。 -->
+                <option value="intermediate" selected data-i18n-option="presetIntermediate">中级</option>
+                <option value="expert" data-i18n-option="presetExpert">高级</option>
+                <option value="custom" data-i18n-option="presetCustom">自定义</option>
+              </select>
+            </label>
+
+            <div id="rowCustom" class="custom" hidden>
+              <label class="field block tiny">
+                <span data-i18n="rows">行</span>
+                <input id="inpRows" type="number" min="5" max="50" value="16" />
+                <!-- min/max 只是占位；真实区间由 panels.js 按 system/info 的口径实时写入 -->
+              </label>
+              <label class="field block tiny">
+                <span data-i18n="cols">列</span>
+                <input id="inpCols" type="number" min="5" max="50" value="30" />
+              </label>
+              <label class="field block tiny">
+                <span data-i18n="mineNum">雷数</span>
+                <input id="inpMines" type="number" min="48" max="168" value="99" />
+              </label>
+              <p id="hintMineRange" class="mine-hint"></p>
+            </div>
+
+            <label class="check">
+              <input id="chkMarks" type="checkbox" checked />
+              <span data-i18n="showMarks">右键可标问号</span>
+            </label>
+            <label class="check">
+              <input id="chkPanelRecords" type="checkbox" checked />
+              <span data-i18n="panelRecords">显示成绩面板</span>
+            </label>
+          </section>
+
+          <div class="stats">
+            <div class="stat">
+              <span class="stat-label" data-i18n="bbbv">3BV</span>
+              <span class="stat-value" id="statBbbv">--</span>
+            </div>
+            <div class="stat">
+              <span class="stat-label" data-i18n="bbbvs">3BV/s</span>
+              <span class="stat-value" id="statBbbvs">--</span>
+            </div>
+            <div class="stat">
+              <span class="stat-label" data-i18n="opened">已开</span>
+              <span class="stat-value" id="statOpened">0</span>
+            </div>
+          </div>
+
+          <section id="sectionRecords" class="panel">
+            <h2>
+              <span data-i18n="records">最佳成绩</span>
+              <span id="lblRecordsDim" class="dim"></span>
+            </h2>
+            <div id="bodyRecords" class="records"></div>
+            <button id="btnClearRecords" type="button" data-i18n="clearRecords">清空</button>
+          </section>
+
+          <p class="hint" data-i18n="focusHint">方向键移动 · 回车翻开</p>
+        </aside>
+      </main>
+    </div>
+
+    <script src="i18n.js"></script>
+    <script src="bridge.js"></script>
+    <script src="canvas.js"></script>
+    <script src="game.js"></script>
+    <script src="panels.js"></script>
+    <script src="input.js"></script>
+    <script>
+      (function () {
+        'use strict';
+        var board = document.getElementById('board');
+        var stage = document.getElementById('stage');
+
+        DS.canvas.mount(board, stage);
+        DS.input.attach(board, stage);
+
+        DS.game.on('snapshot', function (snapshot) {
+          DS.canvas.setSnapshot(snapshot);
+          DS.panels.render(snapshot);
+        });
+
+        // 侧车被宿主回收过：本局作废，提示后重开一局
+        DS.game.on('stale', function () {
+          DS.panels.showNotice(DS.i18n.t('sidecarRestarted'));
+          DS.panels.restart().then(null, function () {
+            /* 重开失败就停在提示上 */
+          });
+        });
+
+        DS.game.on('notice', function (info) {
+          DS.panels.showNotice(DS.bridge.text(info));
+        });
+
+        // 宿主初始化可能晚于本脚本执行，所以先把页面搭起来，ready 到了再补数据
+        DS.bridge.whenReady(function () {
+          // 桥就绪时宿主已把 locale / theme 写进 getter，先补一次环境再启动，
+          // 否则首屏会短暂停在默认的浅色 + 英文（applyEnv 幂等，多跑一次无害）
+          DS.panels.applyEnv();
+          DS.panels.init().then(function () {
+            return DS.panels.restart();
+          });
+        });
+
+        /*
+         * 主题与语言挂在 **env** 通道上，不是 context。
+         *
+         * 原先写成 onContext(function (context) { context.theme … })，而 dev-runtime
+         * 投给 context 监听器的只有工作台上下文（runtime.mjs:2561），主题在 init/env
+         * 消息的顶层由 applyTheme 处理（runtime.mjs:2504/2555/2567）—— context 里
+         * **没有 theme 字段**，于是每次都退到 prefers-color-scheme：
+         * 症状就是「DBX 里切了深色，插件纹丝不动」。
+         *
+         * context 仍然要听（连接、surface 变化），但它同样只需触发一次幂等的 applyEnv。
+         */
+        DS.bridge.onContext(DS.panels.applyEnv);
+
+        // 先按当前宿主外观落一次 data-theme，避免首屏闪一下错误配色；
+        // 再挂 env 监听（事件 + onInit + 轮询兜底），之后宿主改动都能跟上。
+        DS.panels.applyAppearance();
+        DS.panels.startTicker();
+        DS.panels.startEnvWatch();
+        DS.panels.applyLocale();
+      })();
+    </script>
+  </body>
+</html>

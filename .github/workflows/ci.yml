@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 与翻译插件对齐：留一个手动入口，便于在不打 tag 的情况下验证 CI 本身
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # 与 release.yml 的 rust-toolchain 必须是同一个字符串：
+  # 写 stable 这类浮动值会让同一 tag 两次构建出不同字节（PLAN 8.2）
+  RUST_TOOLCHAIN: "1.99.1"
+  PLUGIN_CLI_VERSION: "0.1.9"
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: 装精确 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      # dbx-plugin-sdk 不在 crates.io 上。裸 cargo 命令靠仓库根的 .cargo/config.toml
+      # + backend/vendor/dbx-plugin-sdk 解析（见 AGENTS.md 5.1），所以这里**不需要**装 plugin-cli，
+      # 也不需要往 cargo 命令里拼 --config。打包路径仍由 packager 注入上游 SDK。
+      - name: 格式
+        run: cargo fmt --check --manifest-path backend/Cargo.toml
+
+      - name: Clippy（-D warnings）
+        run: cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
+
+      # 不需要 --test-threads=1：paths 的三处环境变量测试已自带 OnceLock<Mutex> 串行 + 复原现场
+      - name: 单测
+        run: cargo test --manifest-path backend/Cargo.toml
+
+      - name: 构建 release
+        run: cargo build --release --manifest-path backend/Cargo.toml
+
+      - name: 协议端到端
+        run: node _e2e.mjs ./backend/target/release/dbx-plugin-datasweep
+
+      - name: 前端静态闸门
+        run: python _domcheck.py
+
+      # —— 发布链路静态闸门 ——
+      # release.yml 只有打 tag 才会跑，等真发版时才发现"根本没触发"，
+      # 代价是白等一轮 + 一个废 tag。所以把这些检查前移到分支 CI。
+      - name: 发布链路静态闸门
+        run: python _releasecheck.py
+
+  # 官方 packager 拒绝为非本机 target 打包，所以本机只能出 windows-x64；
+  # 其余平台交给 release.yml 的官方矩阵在各平台 runner 上真机产出。
+  package-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 装同一个 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: 装 plugin-cli
+        run: npm i -g "@dbx-app/plugin-cli@${{ env.PLUGIN_CLI_VERSION }}"
+
+      - name: 出包
+        run: dbx-plugin package .
+
+      - name: 包结构闸门
+        run: node _verify.mjs "dist/*.dbxp"
+
+      # 候选生成器的冒烟：它要到真正发版时才第一次被执行，若不在此验证，
+      # schema 自检或 provenance 闸门里的任何错误都会等到发版那一刻才暴露。
+      # 分支 CI 的 GITHUB_REF 不是 refs/tags/v<version>，provenance 必然不通过，
+      # 所以这里显式带 --allow-unverified —— **这一步的产物不可提交商店**，
+      # 只证明"脚本能跑、schema 自检能过、target 拼装没写错"。
+      - name: 商店候选生成器冒烟（产物不可提交）
+        run: node _storecandidate.mjs --allow-unverified --out dist/store-candidate
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dbx-plugin-windows-x64
+          path: |
+            dist/*.dbxp
+            dist/*.artifact.json
+          if-no-files-found: error

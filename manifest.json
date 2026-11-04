@@ -1,0 +1,82 @@
+{
+  "$schema": "https://raw.githubusercontent.com/t8y2/dbx/main/plugins/manifest.schema.json",
+  "manifest_version": 1,
+  "id": "com.vyrnax.datasweep",
+  "name": "扫雷",
+  "version": "0.1.0",
+  "publisher": "vyrnax",
+  "description": "扫雷-经典益智小游戏",
+  "icon": "assets/plugin.svg",
+  "source": "https://github.com/vyrnax/dbx-plugin-datasweep",
+  "homepage": "https://github.com/vyrnax/dbx-plugin-datasweep",
+  "engines": {
+    "dbx": ">=0.6.21",
+    "host_api": "1"
+  },
+  "permissions": [],
+  "entrypoints": {
+    "ui": {
+      "root": "ui",
+      "entry": "ui/index.html"
+    },
+    "backend": {
+      "executable": "bin/dbx-plugin-datasweep"
+    }
+  },
+  "contributions": [
+    {
+      "type": "workbench",
+      "id": "com.vyrnax.datasweep.main",
+      "label": "扫雷",
+      "description": "经典扫雷工作台：三档难度与自定义尺寸、首点保护、压枪、3BV 与本地最佳成绩",
+      "icon": "assets/plugin.svg"
+    },
+    {
+      "type": "command",
+      "id": "com.vyrnax.datasweep.cmd.main",
+      "label": "扫雷",
+      "description": "打开扫雷工作台",
+      "icon": "assets/plugin.svg",
+      "action": {
+        "type": "open-workbench",
+        "workbench": "com.vyrnax.datasweep.main",
+        "presentation": "tab"
+      }
+    },
+    {
+      "type": "menus",
+      "id": "com.vyrnax.datasweep.menus.main",
+      "items": [
+        {
+          "location": "appToolbar",
+          "command": "com.vyrnax.datasweep.cmd.main",
+          "group": "navigation",
+          "order": 1,
+          "default_visible": true
+        },
+        {
+          "location": "commandPalette",
+          "command": "com.vyrnax.datasweep.cmd.main",
+          "group": "navigation",
+          "order": 1
+        }
+      ]
+    }
+  ],
+  "localizations": {
+    "en": {
+      "name": "DataSweep",
+      "description": "Minesweeper - Classic Puzzle Game",
+      "contributions": {
+        "com.vyrnax.datasweep.main": {
+          "label": "DataSweep",
+          "description": "Classic Minesweeper workbench: three presets plus custom sizes, first-click protection, chording, 3BV and local best times"
+        },
+        "com.vyrnax.datasweep.cmd.main": {
+          "label": "DataSweep",
+          "description": "Open the Minesweeper workbench"
+        }
+      }
+    }
+  }
+}

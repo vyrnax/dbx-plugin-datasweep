@@ -1,0 +1,29 @@
+# —— 构建产物 ——
+/dist/
+/.dbx-dev/
+/backend/target/
+/target/
+
+# —— 本地工具与 IDE ——
+/.idea/
+.vscode/
+.DS_Store
+
+# —— Python 闸门脚本跑出来的字节码 ——
+__pycache__/
+*.pyc
+
+# —— 签名私钥：一旦提交，仓库就等于自证不可信 ——
+.dbx-repository-signing-key.env
+
+# —— 会话/命令日志与一次性脚本（工作过程产物，不属于版本库）——
+#
+# `_tmp_*` 是调试期临时脚本/截图/浏览器 profile 的统一前缀。
+# 它们用完就该删（AGENTS.md 硬性要求），但只靠"记得删"是不够的：
+# 一次 `git add -A` 就能把 Chrome 的 user-data-dir（含本机路径与缓存）
+# 整个提交进仓库。前缀约定 + 忽略规则双保险。
+*.log
+agentlog.md
+_*.txt
+_*.mjs.bak
+_tmp_*

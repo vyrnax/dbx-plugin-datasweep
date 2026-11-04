@@ -1,0 +1,273 @@
+name: Release DBX plugin
+
+on:
+  push:
+    # GitHub 的 tags 过滤器是 **glob，不是正则**：`+` 与 `.` 在这里都没有正则含义，
+    # 写成 "v[0-9]+.[0-9]+.[0-9]+*" 等于要求 tag 字面上长成 `v1+.2+.3+...`，
+    # 于是 v0.1.0 这种真实 tag 一个都匹配不上 —— 打 tag 后 workflow 静默不触发，
+    # 而且没有任何报错，只会让人以为"CI 坏了"。
+    # 形态校验交给下面 prepare 的白名单正则，这里只负责"要不要跑"。
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      release-tag:
+        description: 要发布的 tag（形如 v0.1.0）
+        required: true
+
+permissions:
+  contents: write
+
+# 发布不要被互相取消：取消一个跑到一半的 build 会留下残缺的 Release 资产
+concurrency:
+  # 按 ref 分组：同一 tag 的重复触发排队而不互相取消（Release 上传不是可中断的幂等操作），
+  # 不同 tag 之间互不干扰。
+  group: dbx-plugin-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析并校验 tag
+        id: tag
+        env:
+          # dispatch 输入一律经 env 传递，不直接拼进 run，防表达式注入
+          RAW_TAG: ${{ inputs.release-tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          # 白名单正则：只放行 vX.Y.Z（可带 -pre.1 / .rc 这类后缀）
+          if [[ ! "$RAW_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9.-]+)?$ ]]; then
+            echo "::error::tag 不合法：$RAW_TAG"
+            exit 1
+          fi
+          version="${RAW_TAG#v}"
+          manifest_version="$(python3 -c 'import json; print(json.load(open("manifest.json"))["version"])')"
+          cargo_version="$(grep -m1 '^version = ' backend/Cargo.toml | sed -E 's/version = "(.*)"/\1/')"
+          if [[ "$version" != "$manifest_version" ]]; then
+            echo "::error::tag($version) 与 manifest.version($manifest_version) 不一致"
+            exit 1
+          fi
+          if [[ "$version" != "$cargo_version" ]]; then
+            echo "::error::manifest.version($manifest_version) 与 backend/Cargo.toml($cargo_version) 不一致"
+            exit 1
+          fi
+          # 必须让【reusable workflow 内部那次不带 ref 的 checkout】检出同一个 tag。
+          # 它用 actions/checkout@v4 且不传 ref，检出的就是本 workflow 的 github.ref；
+          # 两者不一致就会构建出与目标 tag 无关的字节 —— 候选文件声明的 source 与
+          # 实际被签名的字节对不上，审核者无从核验（provenance 硬伤）。
+          if [[ "$GITHUB_REF" != "refs/tags/$RAW_TAG" ]]; then
+            echo "::error::本次运行的 ref 是 '$GITHUB_REF'，而不是 'refs/tags/$RAW_TAG'。"
+            echo "::error::workflow_dispatch 时请在 Actions 页面把 ref 选成目标 tag 后重新运行。"
+            exit 1
+          fi
+          echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: 创建 / 转正 Release（非 draft、非 prerelease）
+        env:
+          # 经 env 传递而非 ${{ }} 直接插值：与上面 tag 解析同一套防注入约定
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # 商店的 discover-plugin-releases 只认 !draft && !prerelease 的 Release，
+          # prerelease 会被直接跳过 ⇒ 候选永远同步不进目录。
+          # 同 tag 重跑时还要显式 --latest：不设的话 discover 可能扫不到这一版。
+          # RELEASE_NOTES.md 缺失时退回 --generate-notes，而不是让整个发布挂掉。
+          notes_file="RELEASE_NOTES.md"
+          [ -f "$notes_file" ] || notes_file=""
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease=false --latest
+            echo "已把 $TAG 转正为最新正式发布"
+          elif [ -n "$notes_file" ]; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+              --title "$TAG" --notes-file "$notes_file" --draft=false --prerelease=false
+            echo "已创建正式发布 $TAG（说明取自 $notes_file）"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+              --title "$TAG" --generate-notes --draft=false --prerelease=false
+            echo "已创建正式发布 $TAG（RELEASE_NOTES.md 不存在，用自动生成说明）"
+          fi
+
+  # 官方 reusable workflow 的默认矩阵正好是本次要的 5 个 target/runner，不用自定义
+  build:
+    needs: prepare
+    secrets: inherit
+    # pin 到具体 commit。`@plugin-sdk-v1` **不可用**：t8y2/dbx 上已经没有这个 ref
+    # （`git ls-remote --tags` 只有 plugin-cli-v0.1.x，API 查 refs/tags/plugin-sdk-v1 返回 404），
+    # 用它会让整个 run 在解析 `uses:` 时就失败。
+    # 下面这个 sha 与已上架的翻译插件用的是同一个，那条链路经过真机验证。
+    # 绝不写 @main 这类浮动引用：上游一改行为，同一个 tag 重建出的字节就可能变化，
+    # 审核者无法复现 Release 里的哈希（provenance 硬伤）。要升级就显式改 sha。
+    uses: t8y2/dbx/.github/workflows/plugin-release-reusable.yml@374d60573d3a6ae2bbc3035d4d71e63f4fe546b1
+    permissions:
+      # reusable 内部要 checkout 本仓库并 gh release upload，需要写权限
+      contents: write
+    with:
+      release-tag: ${{ needs.prepare.outputs.tag }}
+      package-command: dbx-plugin package .
+      package-path: dist/*.dbxp
+      metadata-path: dist/*.artifact.json
+      # 这两个值必须与 ci.yml 的 env 保持一致；reusable workflow 的 with 里取不到 env 上下文
+      plugin-cli-version: "0.1.9"
+      rust-toolchain: "1.99.1"
+      go-version: ""
+      install-plugin-cli: true
+
+  # publish job 只上传 .dbxp，各 target 的 .artifact.json 要自己补传。
+  # 数据源用 run artifact（不要用通配符去 Release 里下——.dbxp 会被一并抓下来）
+  upload-metadata:
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dbx-plugin-*
+          path: artifacts
+
+      - name: 上传各 target 的 artifact.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # 必须用 find，不能用 bash glob：download-artifact 开了 merge-multiple，
+          # 各 target 的内容被**平铺**进 artifacts/ 根目录；而未开 globstar 的 bash 里
+          # `artifacts/**/*.artifact.json` 等价于 `artifacts/*/*.artifact.json`（一层子目录），
+          # 两个模式都不匹配 ⇒ nullglob 把它们展开成空 ⇒ 这里直接报错、Release 缺元数据。
+          mapfile -d '' metas < <(find artifacts -type f -name '*.artifact.json' -print0)
+          if [ "${#metas[@]}" -eq 0 ]; then
+            echo "::error::没找到任何 artifact.json"
+            exit 1
+          fi
+          gh release upload "$TAG" "${metas[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "已上传 ${#metas[@]} 个 .artifact.json"
+
+  summary:
+    needs: [prepare, build, upload-metadata]
+    runs-on: ubuntu-24.04
+    steps:
+      # _storecandidate.mjs 要读 manifest.json 与 .dbx-store.json，所以必须检出源码。
+      # prepare 的 GITHUB_REF 守卫已保证这里的 ref 就是目标 tag。
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # .artifact.json 从【build job 的 run artifact】取，而不是从 Release 取：
+      # 官方 reusable workflow 的 publish job 根本不上传它们，去 Release 里用通配符下
+      # 会匹配不到、bash 把字面量原样传给后续命令（参考实现就是这么红了一次）。
+      # run artifact 是 build job 必然产出的，且已被 publish job 逐字节校验过
+      # sha256/size 与 .dbxp 一致 —— 不是重新算的，可信。
+      - name: 下载各 target 构建产物（含 .artifact.json）
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dbx-plugin-*
+          path: ${{ runner.temp }}/rel
+          merge-multiple: true
+
+      # release-candidates.json 由 publish job 上传到 Release，这里取它作为 --from 输入。
+      # 【必须下到仓库外】：下到工作树里会让 git status 变脏，provenance 闸门随即失败。
+      - name: 下载 release-candidates.json（到仓库外）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'release-candidates.json' --dir "$RUNNER_TEMP/rel" --clobber
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::下载资产后工作树变脏，provenance 闸门会失败："
+            git status --porcelain
+            exit 1
+          fi
+
+      # 用【CI 真实构建出的】资产哈希生成扁平候选文件。
+      # 这一步不能在本地做：本地构建的字节与 CI 从 tag 构建的不一致，
+      # 写进候选文件的 sha256 就对不上审核者下载的资产。
+      - name: 生成 dbx-store 扁平候选文件
+        shell: bash
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node _storecandidate.mjs --from "$RUNNER_TEMP/rel/release-candidates.json" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --out "$RUNNER_TEMP/store-candidate"
+
+      - name: 上传候选文件（复制进 dbx-store 的 candidates/<id>.json 提 PR）
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbx-store-candidate
+          path: ${{ runner.temp }}/store-candidate/*.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 打印目标 / 体积 / 校验和 / 首次上架清单
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, json, os
+
+          tag = os.environ["TAG"]
+          seen = {}
+          root = os.environ["RUNNER_TEMP"] + "/rel"
+          for path in sorted(set(glob.glob(root + "/**/*.artifact.json", recursive=True))):
+              data = json.load(open(path))
+              seen[data.get("target", "?")] = data
+
+          lines = [
+              f"## DataSweep {tag}",
+              "",
+              "| target | size | sha256 |",
+              "|---|---:|---|",
+          ]
+          for target in sorted(seen):
+              item = seen[target]
+              lines.append(f"| `{target}` | {item.get('size')} | `{item.get('sha256')}` |")
+          lines += [
+              "",
+              f"- 共 {len(seen)} 个 target",
+              "- `release-candidates.json` 由 publish job 汇总，随 Release 一起发布",
+              f"- CI run：{os.environ.get('GITHUB_SERVER_URL', '')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",
+              "",
+              "### 首次上架：提 dbx-store 候选 PR",
+              "",
+              "fork `t8y2/dbx-store`，在**同一个 PR** 里提交两个文件：",
+              "",
+              "1. `publishers/vyrnax.json` —— **本仓库不需要**（已随翻译插件提交过）：",
+              "   该文件已随翻译插件上架时提交进 t8y2/dbx-store（提 PR 前可再确认一次），",
+              "   重复提交会让 PR 的 validate 报「publisher 已存在」。",
+              "   若确实缺失，内容应为 `{"id":"vyrnax","name":"vyrnax","status":"unverified"}`，",
+              "   `status` 必须留 `unverified`，`verified` 只能由维护者改。",
+              "2. `candidates/com.vyrnax.datasweep.json`",
+              "   内容取自本 run 的 **`dbx-store-candidate`** artifact —— 只有 CI 产出的那份",
+              "   才带可核验的资产哈希，本地生成的那份不可提交。",
+              "",
+              "`plugins/*.json` 与 `catalog/index.json` **永不手工编辑**，由签名 Workflow 生成。",
+              "提交后 PR 的 CI 会一直红（`open candidate(s) awaiting DBX Store signing`），这是设计如此。",
+              "",
+              "### 审核必答口径（唯一来源是 README 的「数据与隐私」节）",
+              "",
+              "- **网络访问**：不声明任何 `host.network:*`；侧车不联网、不监听端口、无遥测",
+              "- **权限**：`permissions: []`；不读连接 / SQL / schema / 剪贴板",
+              "- **数据**：只写本机插件数据目录的 `datasweep.json`（偏好 + 成绩），明文无凭据，卸载不自动删除",
+              "- **侧车行为**：1 个 Rust 可执行文件，仅 stdio 通信，由宿主按生命周期启停；无自动点击 / 机扫",
+              "- **签名**：5 个 target 均为未签名候选（不含 `signature.json`），darwin 未做 notarization",
+              "- **provenance**：各 target 由对应平台 runner 真机构建，源码检自本 tag；Rust 二进制没有 Go 那种",
+              "  内建 VCS 戳，故以「CI 从 tag 构建 + 已提交的 `Cargo.lock` + packager 自动 `--locked` +",
+              "  pin 死的 `rust-toolchain: 1.99.1`」自证，本 run 链接即证据",
+              "- **许可**：Apache-2.0，仓库根含 `LICENSE` 全文；依赖 `ms_toollib`(MIT)、`dbx-plugin-sdk`(Apache-2.0)",
+              "",
+              "提 PR 前先在 `t8y2/dbx-store` 里检索是否已有同名条目（显示名「扫雷」偏通用，可能撞名）。",
+          ]
+          print("\n".join(lines))
+          PY

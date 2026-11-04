@@ -1,0 +1,19 @@
+# 与 backend/.cargo/config.toml 内容相同，作用范围不同 —— 两份都必须存在。
+#
+# cargo 的配置文件是**按当前工作目录向上查找**的，跟 `--manifest-path` 指向哪里无关。
+# 实测（cargo 1.x）：只在 backend/ 下放 config.toml 时
+#   cd backend && cargo test                      ✅ patch 生效
+#   cargo test --manifest-path backend/Cargo.toml  ❌ error: no matching package named `dbx-plugin-sdk`
+# 而 README/PLAN/CI 与本地习惯用的恰恰是后者（在仓库根执行），所以仓库根也要有一份。
+#
+# 相对路径以**本配置文件所在目录**为基准，故这里写 backend/vendor/...，
+# backend/.cargo/config.toml 里写 vendor/...。
+#
+# 官方 `dbx-plugin package` 在调用 cargo 时会自己追加
+#   --config 'patch.crates-io.dbx-plugin-sdk.path="<SDK_ROOT>/plugins/sdk/rust/dbx-plugin-sdk"'
+# 命令行 --config 优先级高于本文件，所以打包路径仍由上游 SDK 决定，本文件只补齐
+# 「不经过 packager 的裸 cargo 调用」：cargo test / clippy / build（e2e 需要产物）。
+#
+# vendor/dbx-plugin-sdk 是上游 SDK 的**字节级复制**，禁止修改，见该目录 VENDOR.md。
+[patch.crates-io]
+dbx-plugin-sdk = { path = "backend/vendor/dbx-plugin-sdk" }
