@@ -143,7 +143,7 @@ include = ["assets", "ui"]
   "manifest_version": 1,
   "id": "com.vyrnax.datasweep",
   "name": "扫雷",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "vyrnax",
   "icon": "assets/plugin.svg",
   "engines": { "dbx": ">=0.6.21", "host_api": "1" },
@@ -186,7 +186,7 @@ include = ["assets", "ui"]
 
 **尺寸与雷数采用「夹取」而不是「拒绝」**：行列夹进 5–50，雷数夹进格数的 10%–35%（下限 `div_ceil` 向上、上限整除向下）。输入 1 自动等于下限，超过 35% 自动等于上限——只有**类型**不对（如 `rows` 传字符串）才返回 `-32600`。区间口径的唯一真相在后端 `game::mine_range`，经 `system/info` 的 `minSide` / `maxSide` / `minePercentMin` / `minePercentMax` 暴露给前端实时显示，避免两处各写一份而漂移。
 
-### 4.1 方法表（v0.1.0）
+### 4.1 方法表（v0.1.x）
 
 | 方法 | 入参 | 返回 | 说明 |
 |---|---|---|---|
@@ -345,7 +345,9 @@ node _e2e.mjs ./backend/target/release/dbx-plugin-datasweep.exe
 dbx-plugin package . && node _verify.mjs "dist/*.dbxp"
 python _releasecheck.py
 # 3) 提交并推 tag（tag 必须是 v + manifest.version）
-git commit -am "release: v0.1.0" && git tag v0.1.0 && git push --follow-tags
+# tag 名现场从 manifest 取，绝不手写死版本号（升版后复制粘贴就会打错 tag）
+V=$(node -p "require('./manifest.json').version")
+git commit -am "release: v$V" && git tag -a "v$V" -m "v$V" && git push origin main && git push origin "v$V"
 ```
 
 `release.yml` 由 tag 触发：先校验 tag 与 `manifest.version`、`Cargo.toml` 一致并创建/转正 Release（**非 draft、非 prerelease、`--latest`**——商店的 discover 脚本只认这个，prerelease 会被直接跳过），再调用官方 reusable workflow 按平台矩阵构建，最后把 5 个 `.dbxp` + 5 个 `.artifact.json` + `release-candidates.json` 上传到该 Release，并由 summary job 产出 dbx-store 扁平候选文件。

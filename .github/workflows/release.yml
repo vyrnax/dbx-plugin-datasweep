@@ -246,7 +246,7 @@ jobs:
               "1. `publishers/vyrnax.json` —— **本仓库不需要**（已随翻译插件提交过）：",
               "   该文件已随翻译插件上架时提交进 t8y2/dbx-store（提 PR 前可再确认一次），",
               "   重复提交会让 PR 的 validate 报「publisher 已存在」。",
-              "   若确实缺失，内容应为 `{"id":"vyrnax","name":"vyrnax","status":"unverified"}`，",
+              '   若确实缺失，内容应为 `{"id":"vyrnax","name":"vyrnax","status":"unverified"}`，',
               "   `status` 必须留 `unverified`，`verified` 只能由维护者改。",
               "2. `candidates/com.vyrnax.datasweep.json`",
               "   内容取自本 run 的 **`dbx-store-candidate`** artifact —— 只有 CI 产出的那份",

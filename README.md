@@ -74,7 +74,7 @@
 
 ## 安装
 
-**从商店安装**（v0.1.0 审核通过后）：DBX → 插件中心 → 官方商店，搜索「扫雷」或 `DataSweep`。
+**从商店安装**：DBX → 插件中心 → 官方商店，搜索「扫雷」或 `DataSweep`。
 
 **从 Release 手动安装**：到 [GitHub Releases](https://github.com/vyrnax/dbx-plugin-datasweep/releases) 下载匹配平台的 `.dbxp`，在 DBX 插件中心选择「从本地安装」。
 

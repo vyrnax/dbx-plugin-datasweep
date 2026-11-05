@@ -6,7 +6,7 @@
  * 这里绝不重复实现打包逻辑。只用 Node 内置模块（自带一个最小 zip 读取器）。
  *
  * 用法：
- *   node _verify.mjs dist/com.vyrnax.datasweep-0.1.0-windows-x64.dbxp
+ *   node _verify.mjs "dist/*.dbxp"
  *
  * 一次性报完所有问题：宿主校验 manifest 时只报第一个错，逐个试错非常费时间（PLAN 风险 8）。
  */

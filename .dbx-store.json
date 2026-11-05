@@ -13,7 +13,7 @@
   "source": "https://github.com/vyrnax/dbx-plugin-datasweep",
   "homepage": "https://github.com/vyrnax/dbx-plugin-datasweep",
   "license": "Apache-2.0",
-  "releaseNotes": "0.1.0：首个版本，数据库客户端里的经典扫雷工作台。\n1、三档预设（初级 9×10/10、中级 16×16/40、高级 16×30/99）与自定义尺寸（行列 5–50，雷数取格数的 10%–35%，设置集中在右侧栏，越界自动夹取）\n2、首点保护：Win7 规则（首点开空且邻域无雷）\n3、翻格、旗/问号、压枪、拖拽批量插旗、Ctrl 盲开、键盘全套\n4、秒表、剩余雷数、3BV 与 3BV/s、分维度本地最佳成绩 Top 10\n5、明暗主题与中英文跟随宿主",
+  "releaseNotes": "0.1.1：补丁版本，玩法与界面与 0.1.0 完全一致。\n1、修复数据目录回退的单测在 Linux runner 上必然失败（原断言误设「非 Windows 就拿不到平台配置目录」，而 runner 上 HOME 必然存在）\n2、修复发布流水线 summary 作业因内嵌 Python 引号未转义而失败，导致商店候选文件缺失；并新增编译级闸门，本地即可拦住同类问题",
   "localizations": {
     "en": {
       "name": "DataSweep",

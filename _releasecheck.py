@@ -25,11 +25,19 @@
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import re
 import sys
+import textwrap
 from pathlib import Path
+
+# heredoc 标记：`<<'PY'` / `<<PY`，后面可以跟着 shell 重定向
+# （release.yml 实际写的是 `python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"`，
+#   所以这里必须是 [^\n]* 而不是 [^>\n]* —— 后者会卡在 `>>` 的 `>` 上，
+#   结果是 0 匹配，而 0 匹配会被误读成"没有 heredoc"。）
+HEREDOC_PY = re.compile(r"<<'?PY'?[^\n]*\n(.*?)\n[ ]*PY\b", re.S)
 
 ROOT = Path(__file__).resolve().parent
 # 宿主沙箱 CSP 是 img-src data: blob:，且宿主不内联 <img src> ⇒ 相对路径图片必裂图
@@ -289,6 +297,29 @@ def main() -> int:
                 "assets/plugin.svg 与 ui/icons/brand.svg 内容不一致 —— 前者是宿主侧栏/工作台标签/"
                 "商店页的图标，后者是 UI 内联 SVG 的源文件，不同步就会出现两处图标长得不一样"
             )
+
+    # ── E. workflow 里内嵌 Python 的编译级检查 ───────────────────────
+    # 见文件头注释：这类错误 YAML / bash / 本机三层都查不出来，只在发版那一刻炸。
+    for wf, expect_min in [(RELEASE, 1), (CI, 0)]:
+        text = read(wf)
+        blocks = [m.group(1) for m in HEREDOC_PY.finditer(text)]
+        if len(blocks) < expect_min:
+            problems.append(
+                f"{wf.name} 里没抠到 heredoc Python（找到 {len(blocks)} 块，期望 ≥{expect_min}）"
+                " —— 检查器自身失效了，比没有检查更危险"
+            )
+        for idx, code in enumerate(blocks, 1):
+            # YAML 的 `run: |` 会剥离公共缩进，必须 dedent 后再 parse，
+            # 否则拿带缩进的原文去编译会误报 unexpected indent
+            try:
+                ast.parse(textwrap.dedent(code))
+            except SyntaxError as exc:
+                snippet = textwrap.dedent(code).splitlines()
+                where = snippet[exc.lineno - 1][:90] if exc.lineno and exc.lineno <= len(snippet) else "?"
+                problems.append(
+                    f"{wf.name} 第 {idx} 段 heredoc Python 第 {exc.lineno} 行语法错误："
+                    f"{exc.msg}；该行：{where}"
+                )
 
     # ── 输出 ─────────────────────────────────────────────────────────
     if problems:
