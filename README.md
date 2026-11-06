@@ -123,5 +123,3 @@ dbx-plugin dev --port 5190                              # 开发宿主，打开 
 Apache-2.0，详见 [`LICENSE`](./LICENSE)。
 
 依赖许可：`ms_toollib`（MIT）、`dbx-plugin-sdk`（Apache-2.0，官方 SDK）、`serde` / `serde_json`（MIT / Apache-2.0）。
-
-本插件与 [元扫雷 Metasweeper](https://github.com/eee555/Metasweeper)（GPL-3.0 + 附加商业限制条款）**没有代码衍生关系**，仅通过 crates.io 使用其以 MIT 发布的算法库 `ms_toollib`；界面、图标、文案与实现全部为本仓库原创。

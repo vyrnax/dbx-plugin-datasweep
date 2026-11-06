@@ -3,17 +3,17 @@
   "description": "扫雷-经典益智小游戏",
   "tags": [
     "minesweeper",
-    "扫雷",
     "game",
     "puzzle",
-    "productivity"
+    "casual",
+    "entertainment"
   ],
   "icon": "assets/plugin.svg",
   "permissions": [],
   "source": "https://github.com/vyrnax/dbx-plugin-datasweep",
   "homepage": "https://github.com/vyrnax/dbx-plugin-datasweep",
   "license": "Apache-2.0",
-  "releaseNotes": "0.1.1：补丁版本，玩法与界面与 0.1.0 完全一致。\n1、修复数据目录回退的单测在 Linux runner 上必然失败（原断言误设「非 Windows 就拿不到平台配置目录」，而 runner 上 HOME 必然存在）\n2、修复发布流水线 summary 作业因内嵌 Python 引号未转义而失败，导致商店候选文件缺失；并新增编译级闸门，本地即可拦住同类问题",
+  "releaseNotes": "0.1.2：玩法不变，界面三处调整。\n1、踩雷后计数器条中间的笑脸变哭脸（F2 或点它重开即恢复）\n2、深色主题下踩雷格的背景改为与浅色一致的正红，不再发粉、更醒目\n3、移除插件内顶部的「扫雷」标题与图标，插件名由宿主侧栏与工作台标签承载\n4、自定义雷数区间仍为格数的 10%–35%，行列 5–50，越界自动夹取",
   "localizations": {
     "en": {
       "name": "DataSweep",

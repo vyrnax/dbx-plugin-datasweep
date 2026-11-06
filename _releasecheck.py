@@ -265,37 +265,25 @@ def main() -> int:
                 "且宿主不内联 <img> ⇒ 真机上是裂图。图标必须内联 SVG"
             )
 
-    # 内联 SVG 与源文件的一致性（防漂移）：源文件仍是唯一真相
-    for inline_id, source in [("brand-icon", ROOT / "ui" / "icons" / "brand.svg"),
-                              ("btnApply", ROOT / "ui" / "icons" / "smilingface.svg")]:
+    # 内联 SVG 与源文件的一致性（防漂移）：源文件仍是唯一真相。
+    # 必须**按 class 定位**：笑脸与哭脸共用 viewBox="0 0 1024 1024"，
+    # 用通用的 viewBox 正则永远只会匹配到第一张，于是"改了哭脸没改笑脸"
+    # 这类漂移查不出来。
+    for cls, source in [("face-plain", ROOT / "ui" / "icons" / "smilingface.svg"),
+                        ("face-cry", ROOT / "ui" / "icons" / "cryingface.svg")]:
         if not source.is_file():
-            problems.append(f"图标源文件缺失：{source.name}")
+            problems.append(f"表情图标源文件缺失：{source.name}")
             continue
         src_body = _svg_inner(read(source))
-        if inline_id == "brand-icon":
-            m = re.search(r'<svg class="brand-icon"[^>]*>(.*?)</svg>', html_raw, re.S)
-        else:
-            m = re.search(r'<svg viewBox="0 0 1024 1024"[^>]*>(.*?)</svg>', html_raw, re.S)
+        m = re.search(r'<svg class="face %s"[^>]*>(.*?)</svg>' % cls, html_raw, re.S)
         # 用原文而非剥注释后的文本：剥注释会顺手改动空白，比对不稳定
         if not m:
-            problems.append(f"index.html 里找不到 {inline_id} 的内联 SVG")
+            problems.append(f"index.html 里找不到 {cls} 的内联 SVG")
             continue
         if _svg_inner("<svg>" + m.group(1) + "</svg>") != src_body:
             problems.append(
-                f"{inline_id} 的内联 SVG 与源文件 {source.name} 不一致 —— "
-                "改了源文件要同步改内联，否则界面上是旧图、assets/ 里是新图"
-            )
-
-    # 同一个图形有三份消费方：manifest/store 用 assets/plugin.svg，
-    # UI 内联 SVG 的源文件是 ui/icons/brand.svg。两者只改一个不会报错，
-    # 症状是"宿主侧栏图标与插件界面图标不一样"，所以钉死必须逐字节相同。
-    assets_icon = ROOT / "assets" / "plugin.svg"
-    brand_icon = ROOT / "ui" / "icons" / "brand.svg"
-    if assets_icon.is_file() and brand_icon.is_file():
-        if assets_icon.read_bytes() != brand_icon.read_bytes():
-            problems.append(
-                "assets/plugin.svg 与 ui/icons/brand.svg 内容不一致 —— 前者是宿主侧栏/工作台标签/"
-                "商店页的图标，后者是 UI 内联 SVG 的源文件，不同步就会出现两处图标长得不一样"
+                f"{cls} 的内联 SVG 与源文件 {source.name} 不一致 —— "
+                "改了源文件要同步改内联，否则宿主里是旧图、界面上是新图"
             )
 
     # ── E. workflow 里内嵌 Python 的编译级检查 ───────────────────────

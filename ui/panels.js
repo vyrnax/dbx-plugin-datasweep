@@ -189,6 +189,14 @@ DS.panels = (function () {
     );
     updateTime();
     updateBbbvPerSecond();
+    /*
+     * 表情只有一个赋值点：踩雷切哭脸，其余一律笑脸。
+     * 在 won / lost 分支里各写一遍迟早漏掉"重开一局要把哭脸换回来"，
+     * 而 render 每次快照都会走，这里不会漏。
+     */
+    if (els.apply) {
+      els.apply.setAttribute('data-face', snapshot.status === 'lost' ? 'cry' : 'plain');
+    }
     if (snapshot.status !== lastStatus) {
       lastStatus = snapshot.status;
       if (snapshot.status === 'won') {

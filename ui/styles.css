@@ -20,6 +20,9 @@
   --ds-flag: #c81e1e;
   --ds-mine: #1b1b1b;
   --ds-hit: #e03131;
+  /* 踩雷格的背景色。与 --ds-hit 分开：后者还用于提示文字与错旗描边，
+     深色下必须调亮才看得清，而背景色两套主题都该是同一个正红。 */
+  --ds-hit-bg: #e03131;
   --ds-focus: #1c7ed6;
   --ds-n1: #1971c2;
   --ds-n2: #2f9e44;
@@ -58,6 +61,8 @@
   --ds-text: #f1f3f5;
   --ds-flag: #ff6b6b;
   --ds-mine: #f1f3f5;
+  /* 文字与描边可以亮一档保证可读；但 --ds-hit-bg **不在这里覆盖** ——
+     踩雷格的背景必须与浅色主题同一个正红，否则深色下变成粉红、不够醒目。 */
   --ds-hit: #ff8787;
   --ds-focus: #74c0fc;
   --ds-n1: #74c0fc;
@@ -104,40 +109,21 @@ body {
   min-height: 0;
 }
 
-/* —— 顶部品牌行：只剩图标与名称，其余设置都在右侧栏 ——
+/* —— 表情：笑脸 / 哭脸 ——
  *
- * 高度是这里最容易被忽略的手感问题：原先只有 7px 上下内边距 + 18px 图标，
- * 整条约 33px，而下面紧贴的计数器条有 54px —— 两条高度差到 1.6 倍，
- * 看上去就是"顶部被压扁了"。现在把品牌行抬到 44px，并给图标一个与
- * 品牌文字同高的圆角底座，读起来才像一个正常的标题栏。
+ * 两个内联 SVG 都在文档里，靠按钮的 data-face 切换显隐（宿主 CSP 拦 <img src>，
+ * 不能换图片地址）。选择器带上 .icon-button 提高特异性，才能盖住
+ * `.icon-button svg` 那条尺寸规则所在的层叠顺序。
+ * 同一时刻只有一个 display:block ⇒ flex 的居中最初条件不变，
+ * 脸始终坐在计数器条正中，不需要 absolute 叠放。
  */
-#toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--ds-border);
+.icon-button .face {
+  display: none;
 }
 
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-
-.brand-icon {
-  width: 26px;
-  height: 26px;
+.icon-button[data-face="plain"] .face-plain,
+.icon-button[data-face="cry"] .face-cry {
   display: block;
-  padding: 2px;
-  border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-sm);
-  background: var(--ds-panel);
 }
 
 /* —— 笑脸 = 开这一局：坐在 counter bar 正中 —— */
@@ -155,12 +141,13 @@ body {
   line-height: 0;
 }
 
-/* 图标是内联 SVG（宿主 CSP 拦 <img src>），选择器要同时覆盖 svg */
+/* 图标是内联 SVG（宿主 CSP 拦 <img src>），选择器要同时覆盖 svg。
+   这里**只定尺寸**：显隐由下面的 .face 规则负责，两处都写 display
+   会因为特异性（0,1,1 > 0,1,0）把隐藏的那张脸又显示出来。 */
 .icon-button img,
 .icon-button svg {
   width: 34px;
   height: 34px;
-  display: block;
   pointer-events: none;
 }
 

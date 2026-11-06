@@ -99,8 +99,9 @@ dbx-plugin-datasweep/
 │   ├── panels.js              # 秒表 / 雷数 / 3BV / 成绩 / 设置 / applyEnv
 │   ├── i18n.js                # zh / en（t(key, params) 支持 {name} 占位符）
 │   ├── styles.css             # --ds-* 色板 + color-scheme + 宿主 token 兜底引用
-│   └── icons/                 # brand.svg（顶栏品牌源文件）、smilingface.svg（笑脸源文件）
+│   └── icons/                 # smilingface.svg（笑脸）、cryingface.svg（哭脸，踩雷时显示）
 │                              # 必须放 ui/ 内：沙箱 iframe 里引用 ../assets/ 会跨出 ui.root
+│                              # 顶部品牌行已移除 ⇒ 没有 brand.svg；插件图标只由宿主侧栏/商店用
 ├── .cargo/config.toml         # [patch.crates-io] 指向 vendor（理由见 5.1）
 ├── backend/                   # 独立 Rust crate（自带 [workspace]）
 │   ├── Cargo.toml
@@ -170,7 +171,13 @@ include = ["assets", "ui"]
   正因为这个不确定性，`startEnvWatch()` 除了事件监听还留了 **1.5 秒轮询 `dbxPlugin.theme` getter**
   的兜底：即便 `env` 事件被权限拦掉，外观与语言仍然会在一两秒内跟上。
   桌面端验收时请确认这一点（见 PLAN 第十节剩下的第 1 项）。
-- `ui/icons/` 与 `assets/plugin.svg` 必须**逐字节相同**（同一图形的两个消费方），`_releasecheck.py` 有守卫。
+- `assets/plugin.svg` 是插件图标的**唯一**来源（宿主侧栏、工作台标签、商店页都用它）。
+  UI 内部不再引用它：顶部品牌行已移除，计数器条里的两张脸是 `ui/icons/` 下的独立 SVG。
+- **表情靠 `data-face` 在两张内联 SVG 之间切显隐**，不是换图片地址（铁律 4）。
+  笑脸与哭脸**共用同一个 `viewBox="0 0 1024 1024"`**，所以 `_releasecheck.py` 的一致性
+  守卫必须按 class（`face-plain` / `face-cry`）定位 —— 用 viewBox 匹配会永远只比到第一张脸，
+  "改了哭脸没改笑脸"就查不出来。CSS 侧同理：显隐规则的特异性必须高于
+  `.icon-button svg` 那条尺寸规则，否则隐藏的那张脸会被重新显示。
 
 ### 3.3 版本号必须一致的地方
 
@@ -418,15 +425,6 @@ Go 侧车能把 `vcs.revision` / `vcs.modified` 内嵌进二进制，审核者 `
 2. **schema 自检**：把 `validate.mjs` 的静态规则（键白名单、semver / `sha256` / `target` 正则、icon 只能是 SVG/PNG、`targets[].url` 必须 HTTPS 且不能指向 dbx-store 的 release）在本地先跑一遍。
 
 审核必答口径（本插件的披露内容，**README「数据与隐私」节是唯一来源**，商店表单照抄）：不联网、无权限声明、只写 `datasweep.json`、明文无凭据、卸载不自动删除、无自动点击 / 机器求解、5 个 target 均为未签名候选（darwin 未做 notarization）。
-
-### 6.4 合规红线
-
-**元扫雷（Metasweeper）本体是 GPL-3.0 加附加商业限制条款。** 本插件与它的关系只有一条：把 crates.io 上以 MIT 发布的算法库 `ms_toollib` 当依赖。
-
-- 不从 Metasweeper 仓库搬运任何 Python 源码、界面逻辑、配色、图标、字体、音效、截图或 `.avf` 样例
-- 不复制其 README 文案
-- 游戏机制（翻格 / 压枪 / 首点保护 / 3BV 规则）属于公开玩法与算法概念，实现全部为本仓库新写的 Rust/JS
-
 ---
 
 ## 7. 前端约束与手感要点
@@ -479,7 +477,7 @@ Go 侧车能把 `vcs.revision` / `vcs.modified` 内嵌进二进制，审核者 `
 | `_releasecheck.py` | 发布链路静态闸门（见下） | `release.yml` 只有打 tag 才跑，错误要等到发版那一刻才暴露，代价是白等一轮 + 一个废 tag |
 | `_storecandidate.mjs` | 生成 dbx-store 扁平候选文件 + provenance 闸门 + schema 自检 | 格式错了商店 PR 直接红 |
 
-`_releasecheck.py` 覆盖：tag 触发过滤器必须是 glob 且能匹配当前版本、reusable 引用必须 pin 到 commit sha、`.artifact.json` 查找不能用 bash `**/`、reusable job 要有 `secrets: inherit` 与 `contents: write`、`gh` 必须带 `--repo`、Release 转正要 `--latest`、`concurrency.group` 必须含 `github.ref`、`GITHUB_REF` 守卫、`go-version` 必须显式关掉、`ci.yml` 与 `release.yml` 的工具链与 plugin-cli 版本必须一致且 pin 精确值、版本号五处一致、**宿主主题通道**（`onEnv` 存在、双注册 + capture、`themeObject`、`index.html` 脚本里不得自己写 `data-theme`）、**图标通道**（不得出现 `<img src>`、内联 SVG 与源文件一致、`assets/plugin.svg` 与 `ui/icons/brand.svg` 逐字节相同）。
+`_releasecheck.py` 覆盖：tag 触发过滤器必须是 glob 且能匹配当前版本、reusable 引用必须 pin 到 commit sha、`.artifact.json` 查找不能用 bash `**/`、reusable job 要有 `secrets: inherit` 与 `contents: write`、`gh` 必须带 `--repo`、Release 转正要 `--latest`、`concurrency.group` 必须含 `github.ref`、`GITHUB_REF` 守卫、`go-version` 必须显式关掉、`ci.yml` 与 `release.yml` 的工具链与 plugin-cli 版本必须一致且 pin 精确值、版本号五处一致、**宿主主题通道**（`onEnv` 存在、双注册 + capture、`themeObject`、`index.html` 脚本里不得自己写 `data-theme`）、**图标通道**（不得出现 `<img src>`；笑脸与哭脸两份内联 SVG **各自**与源文件一致，按 class 定位而非 viewBox）。
 
 **每条守卫都必须反向验证**——把问题塞回去看它红不红。本会话两次抓到"永远通过"的假守卫：shell block 正则里 `.` 只匹配一个字符（整条检查静默失效）、panels.js 的判据用词表匹配（被注释里的字样骗过）。只会被动通过的闸门等于没有闸门。
 

@@ -63,6 +63,8 @@ DS.canvas = (function () {
       flag: read('--ds-flag', '#c81e1e'),
       mine: read('--ds-mine', '#1b1b1b'),
       hit: read('--ds-hit', '#e03131'),
+      // 踩雷格的背景：明暗两套同值，与用于文字/描边的 --ds-hit 分开
+      hitBg: read('--ds-hit-bg', '#e03131'),
       focus: read('--ds-focus', '#4c8bf5'),
       // 数字用等宽字体：宿主换了 --font-mono 也要跟着换，不能在这里抄死一份
       mono: read('--ds-font-mono', 'ui-monospace, Consolas, monospace'),
@@ -238,7 +240,9 @@ DS.canvas = (function () {
       ctx.lineTo(x + size * 0.18, y + size * 0.82);
       ctx.stroke();
     } else if (code === HIT_MINE) {
-      ctx.fillStyle = palette.hit;
+      // 背景用 hitBg（两套主题同一个正红）；深色下若沿用 palette.hit
+      // 会被调亮成粉红，玩家反馈"不够醒目"
+      ctx.fillStyle = palette.hitBg;
       ctx.fillRect(x, y, size, size);
       drawMineGlyph(x, y, size);
     } else if (code === OTHER_MINE) {

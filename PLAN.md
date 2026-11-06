@@ -112,11 +112,7 @@
     - 游戏局面 `board_of_game`：`10` 未打开、`11` 雷（算法判定为雷 **或** 玩家插旗，二者不共存）、`12` 已判定非雷但未点、`0..8` 已开、`14` 失败后显示标错的雷、`15` 踩中的红雷、`16` 失败后显示的其他雷、`18` 压枪高亮造成的"看起来像 0"
     - **ms_toollib 没有"问号"编码** ⇒ 问号标记由本插件的 `Game` 结构自己维护（`marks: Vec<(usize, usize)>`），下发为独立字段，**不自造数字码**去污染算法语义
 22. **`GameBoard` 类型不是点击状态机**（`board.rs` 实测：`set_game_board`/`get_poss`/`get_basic_is_mine`/`get_enum_*` 等），是给判雷与概率引擎用的分析包装。⇒ **`Game` 结构自己持有 `board` + `board_of_game` + `flags` + 计时**，翻格动作转成 `refresh_board(真实局面, &mut game_board, 坐标列表)`。
-23. **合规红线：Metasweeper 本体是 GPL-3.0 + 附加商业限制与贡献者收益分配条款。**
-    - 禁止搬运其任何 Python 源码、`uiFiles`/`media` 素材、图标、字体、音效、截图、`.avf` 样例、README 文案
-    - 只把 crates.io 上 MIT 发布的 `ms_toollib` 作为依赖（`Cargo.lock` 与 README 注明来源与许可）
-    - 游戏机制本身（翻格/压枪/首点保护/3BV 定义）属公开玩法概念与算法，实现全部新写
-24. **`ms_toollib` 官方立场**：不提供机扫工具，明确反对用机扫模拟人类操作攻击排行榜。⇒ 本插件**不做自动点击、不做整局自动求解**；0.2.0 的"无猜模式"仅指*生成 100% 可判雷的局面*（`laymine_solvable*`）与*逐格概率提示*，属于玩法模式，与机扫无关。
+23. **`ms_toollib` 官方立场**：不提供机扫工具，明确反对用机扫模拟人类操作攻击排行榜。⇒ 本插件**不做自动点击、不做整局自动求解**；0.2.0 的"无猜模式"仅指*生成 100% 可判雷的局面*（`laymine_solvable*`）与*逐格概率提示*，属于玩法模式，与机扫无关。
 
 ### 2.3 本机环境（已实测）
 
@@ -130,7 +126,7 @@
 | Python | 3.14.6 ✅（仅前端静态闸门） |
 | `@dbx-app/plugin-cli` | 0.1.9 已全局安装 ✅，`sdk-root` 含 Rust/Go SDK；CLI 原生二进制在其 `node_modules/@dbx-app/plugin-cli-win32-x64/bin/dbx-plugin.exe` |
 | zig / scoop / choco / cmake / ninja | 均不存在（不需要） |
-| 参考实现 | 已上架的 Go 插件 `dbx-plugin-translation`（github.com/vyrnax）、`Metasweeper`（GPL 本体 + MIT 算法库来源），均放在本机工作目录，路径不入库 |
+| 参考实现 | 已上架的 Go 插件 `dbx-plugin-translation`（github.com/vyrnax） |
 | 仓库 | 本仓库，remote `https://github.com/vyrnax/dbx-plugin-datasweep.git`，分支 `main` |
 
 ### 2.4 阶段 0 实测补充（比事实 19–22 更细，且有两处纠正原假设）
@@ -312,7 +308,7 @@ backend/ (独立 crate，自带 [workspace])
 
 | 文件 | 内容 |
 |---|---|
-| `ui/index.html` | 单一工作台页；顶部只放品牌图标 + 「扫雷」+ 笑脸重开按钮；右侧栏顺序为 状态提示 → 设置（难度，选自定义才展开行/列/雷数与区间提示）→ 统计格 → 成绩 |
+| `ui/index.html` | 单一工作台页；顶部无品牌行（标题与图标已移除，插件名由宿主侧栏承载），计数器条正中是笑脸/哭脸按钮；右侧栏顺序为 状态提示 → 设置（难度，选自定义才展开行/列/雷数与区间提示）→ 统计格 → 成绩 |
 | `ui/bridge.js` | `window.dbxPlugin` 封装：`call(method, params, timeout)`（超时常量必须落在 1–120000）、`ready` 不阻塞启动（宿主 init 可能晚于脚本执行）、`onContext` 订阅 theme/locale、错误文案归一 |
 | `ui/game.js` | 前端状态（最近快照、焦点格、队列）；**`game/*` 单在途请求 + FIFO 队列**（防乱序回退）；`-32010` → 重置提示 |
 | `ui/canvas.js` | DPR 适配、格子边长自适应（下限 12px，超出容器时按容器缩放）、`cells`+`marks`→绘制（未开/数字 1–8 配色/旗/问号/雷/红雷/标错雷/高亮）、脏区重绘 |
@@ -527,7 +523,7 @@ DOM id 存在性、禁用 API、UTF-8 无 BOM、注释剥离后再扫描。
 | 4 | 手改 SDK 依赖写法导致打包失败 | 事实 3 + 4.1 纪律：保持模板生成写法；`Cargo.lock` 必须提交 |
 | 5 | 高频点击的 IPC 竞态 / 事件丢失 | 前端 `game/*` 单在途 + FIFO 队列（4.5）；压枪用 `e.buttons===3` 不用 `dblclick`；`contextmenu` preventDefault |
 | 6 | 侧车被宿主回收导致本局丢失 | 只保证 prefs/records 落盘；`-32010` 明确提示"侧车已重启，本局作废"，不假装能恢复 |
-| 7 | GPL-3.0 + 商业限制污染 | 事实 23 红线：零搬运 Metasweeper 源码/素材/文案；只用 MIT 的 `ms_toollib`；README「许可」节与 AGENTS.md 6.4 公开声明无衍生关系 |
+| 7 | GPL-3.0 + 商业限制污染 | 事实 23 红线 ；只用 MIT 的 `ms_toollib`；README 只留依赖署名，不写对外免责声明（无法律效力，反而凭空建立关联） |
 | 8 | manifest 字段被宿主拒绝（且只报第一个错） | `_verify.mjs` 内置 schema 字段白名单闸门，打包前一次报完；`menus` 不带 `label` |
 | 9 | 包内 CRLF / 大写资源名 / 缺 `LICENSE` 被商店拦 | 事实 14 + `.gitattributes` + `_verify.mjs` 闸门；`RELEASE_NOTES.md` 只写本版且首行版本号必须等于 `manifest.version` |
 | 10 | Rust 无内建 VCS 戳，provenance 被审核质疑 | 事实 15 的四条自证 + summary 打印 + 可选 `DATASWEEP_BUILD_REV`（4.4），候选 PR 附 CI run 链接 |
