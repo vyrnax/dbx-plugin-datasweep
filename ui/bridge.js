@@ -291,8 +291,10 @@ DS.bridge = (function () {
   function text(error) {
     var info = failure(error);
     var key = CODE_KEYS[String(info.code)];
-    if (key) {
-      return DS.i18n.t(key);
+    // 业务状态错误记住原始 code：-32011 的语义应保留，避免再被改成通用文案；
+    // 用户看到的仍然是 i18n 文案。
+    if (key === 'errInternal') {
+      return info.message || DS.i18n.t('errDefault');
     }
     return info.message || DS.i18n.t('errDefault');
   }

@@ -1,16 +1,21 @@
 /**
  * 指针与键盘输入。
  *
- * 三条必须照做的约定（README 6 / PLAN 4.5）：
- * - 压枪用 `e.buttons === 3`，**不用 dblclick**——扫雷的高频连点下 dblclick 既会误判也会丢事件；
+ * 手势约定（README 6 / PLAN 4.5）：
+ * - 压枪只认左右键同时按住（`e.buttons === 3`），**不用 dblclick**——高频连点下
+ *   dblclick 既误判又丢事件；也绝不把"单左键点已开格"当成压枪（那是一次回归：
+ *   九宫格高亮闪烁 + "周围旗数与该数字不符"）；
+ * - 左键在 pointerup 才生效（拖出取消）；对已翻开的格子单左键 = 无反应（经典扫雷语义）；
+ * - 右键对已翻开的数字格 = 无反应：不进入旗循环、不发旗 RPC、不报错；
  * - `contextmenu` 必须 preventDefault，否则宿主弹浏览器原生右键菜单；
- * - 键盘只挂在工作台容器上，**不挂全局 document**，免得抢宿主的快捷键。
+ * - 键盘只挂在工作台容器上，**不挂全局 document**，避免抢宿主快捷键。
  */
 window.DS = window.DS || {};
 DS.input = (function () {
   'use strict';
 
   var FLAG = 11;
+  var OPEN = 10;
 
   var board = null;
   var stage = null;
@@ -35,6 +40,12 @@ DS.input = (function () {
     return !!snap && (snap.status === 'won' || snap.status === 'lost');
   }
 
+  /** 已翻开的数字格（0-8）：普通左键无反应、普通右键无反应，只有双键压枪。 */
+  function isOpenedNumber(snap, row, col) {
+    var value = snap.cells[row][col];
+    return value >= 0 && value <= 8;
+  }
+
   function isMarked(snap, row, col) {
     var marks = snap.marks || [];
     for (var i = 0; i < marks.length; i += 1) {
@@ -45,11 +56,14 @@ DS.input = (function () {
     return false;
   }
 
-  /** 旗 → 问号 → 空 的循环。UI 只在关掉问号档时把中间那步跳过。 */
+  /** 旗 → 问号 → 空 的循环。已翻开的格子返回 null（无反应，不做财产切换）。 */
   function cycleMode(row, col) {
     var snap = snapshot();
     if (!snap) {
       return 'flag';
+    }
+    if (isOpenedNumber(snap, row, col)) {
+      return null;
     }
     if (isMarked(snap, row, col)) {
       return 'clear';
@@ -80,7 +94,7 @@ DS.input = (function () {
         if (r < 0 || c < 0 || r >= snap.rows || c >= snap.cols) {
           continue;
         }
-        if (snap.cells[r][c] === 10) {
+        if (snap.cells[r][c] === OPEN) {
           cells.push([r, c]);
         }
       }
@@ -101,10 +115,16 @@ DS.input = (function () {
     DS.canvas.setFocus(cell);
     board.focus();
 
-    // 左右键同时按住 = 压枪。用 buttons 位掩码而不是维护"左右都按过"的状态位。
+    var snap = snapshot();
+
+    // 压枪：左右键同时按住（buttons === 3），只对已翻开的数字格生效。
+    // 判据用位掩码而不是维护"左右都按过"的状态位；单左键点已开格绝不落进这里。
     if (event.buttons === 3) {
       pending = null;
       if (isOver()) {
+        return;
+      }
+      if (!snap || !isOpenedNumber(snap, cell[0], cell[1])) {
         return;
       }
       chordPreview = cell;
@@ -117,9 +137,12 @@ DS.input = (function () {
       if (isOver()) {
         return;
       }
-      // 按住右键拖动批量插旗：整段拖动的动作由第一格决定，
-      // 每格只在"跨进新格"时切一次，绝不重复切换同一格。
+      // 已翻开的格子上右键静默无反应：不发旗 RPC、不弹错误（旗的语义是"这是雷"，
+      // 在已开格上插旗是矛盾操作，弹 -32011 只会污染体验）。
       var mode = cycleMode(cell[0], cell[1]);
+      if (!mode) {
+        return;
+      }
       drag = { mode: mode, visited: {} };
       drag.visited[cell[0] + ':' + cell[1]] = true;
       swallow(DS.game.flag(cell[0], cell[1], mode));
@@ -127,7 +150,8 @@ DS.input = (function () {
     }
 
     if (event.button === 0) {
-      // 左键在 pointerup 时才生效，允许拖出去取消（与经典扫雷一致）
+      // 左键在 pointerup 才生效，允许拖出去取消（与经典扫雷一致）。
+      // 已翻开的格子最终在 pointerup 处被拦截（见下），不发 reveal。
       pending = { cell: cell, force: event.ctrlKey || event.metaKey };
     }
   }
@@ -167,11 +191,21 @@ DS.input = (function () {
       return;
     }
     var cell = DS.canvas.hitTest(event.clientX, event.clientY);
-    var same = cell && cell[0] === pending.cell[0] && cell[1] === pending.cell[1];
-    if (same && !isOver()) {
-      swallow(DS.game.reveal(cell[0], cell[1], pending.force));
+    if (!cell || cell[0] !== pending.cell[0] || cell[1] !== pending.cell[1]) {
+      pending = null;
+      return;
     }
+    var snap = snapshot();
+    var force = pending.force;
     pending = null;
+    if (isOver()) {
+      return;
+    }
+    // 已翻开的格子上单左键无反应（经典扫雷语义）；旗格的 force 语义交后端处理。
+    if (snap && snap.cells[cell[0]][cell[1]] >= 0 && snap.cells[cell[0]][cell[1]] <= 8) {
+      return;
+    }
+    swallow(DS.game.reveal(cell[0], cell[1], force));
   }
 
   function onPointerCancel() {
@@ -211,7 +245,10 @@ DS.input = (function () {
       }
     } else if (event.key === ' ' || event.key === 'Spacebar') {
       if (focus && !isOver()) {
-        swallow(DS.game.flag(focus[0], focus[1], cycleMode(focus[0], focus[1])));
+        var mode = cycleMode(focus[0], focus[1]);
+        if (mode) {
+          swallow(DS.game.flag(focus[0], focus[1], mode));
+        }
       }
     } else if (event.key === 'F2' || (event.key === 'r' && (event.ctrlKey || event.metaKey))) {
       swallow(DS.panels.restart());
@@ -229,7 +266,6 @@ DS.input = (function () {
   function attach(boardEl, stageEl) {
     board = boardEl;
     stage = stageEl;
-    // 让 canvas 能接收键盘焦点，但键盘监听挂在容器上
     board.setAttribute('tabindex', '0');
     board.addEventListener('contextmenu', onContextMenu);
     board.addEventListener('pointerdown', onPointerDown);
