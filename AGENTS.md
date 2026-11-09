@@ -105,7 +105,7 @@ dbx-plugin-datasweep/
 ├── .cargo/config.toml         # [patch.crates-io] 指向 vendor（理由见 5.1）
 ├── backend/                   # 独立 Rust crate（自带 [workspace]）
 │   ├── Cargo.toml
-│   ├── Cargo.lock             # 必须提交：packager 见 lock 即加 --locked
+│   ├── Cargo.lock             # 必须提交：packager 见 lock 即加 --locked；升版本时本包条目要同步（六处之一）
 │   ├── .cargo/config.toml     # 同上，覆盖 `cd backend && cargo …` 的用法
 │   ├── vendor/dbx-plugin-sdk/ # 上游 Rust SDK 的字节级复制（见 vendor/VENDOR.md）
 │   └── src/{main,rpc,game,msbridge,snapshot,store,paths}.rs
@@ -181,7 +181,12 @@ include = ["assets", "ui"]
 
 ### 3.3 版本号必须一致的地方
 
-`manifest.json` 的 `version` = `backend/Cargo.toml` 的 `version` = tag 去掉 `v` = `.dbx-store.json` 的 `releaseNotes` 首行版本 = `RELEASE_NOTES.md` 首行版本。
+`manifest.json` 的 `version` = `backend/Cargo.toml` 的 `version` = **`backend/Cargo.lock` 里 `name = "dbx-plugin-datasweep"` 条目的 `version`** = tag 去掉 `v` = `.dbx-store.json` 的 `releaseNotes` 首行版本 = `RELEASE_NOTES.md` 首行版本。
+
+> `Cargo.lock` 是最容易漏的第六处：packager 见 lock 就自动 `--locked`，lock 里的本包版本停在旧值时
+cargo 拒绝改写 lock，**release 矩阵在打包阶段直接 101**（`cannot update the lock file ... because --locked`）。
+而 CI 的裸 `cargo test/build` 不带 `--locked`，只会静默改写工作区副本——**main 全绿照样踩**。v0.1.3 首发即栽在这。
+`_verify.mjs` 与 `_releasecheck.py` 已把这条锁成闸门。
 
 `_verify.mjs` 与 `release.yml` 的 prepare job 都会校验；`_releasecheck.py` 在本机也查一遍。
 
@@ -344,7 +349,7 @@ run this package command on the target platform
 ### 6.1 流程（推 tag 即全自动）
 
 ```bash
-# 1) 改版本号，五处一致（见 3.3）
+# 1) 改版本号，六处一致（见 3.3，Cargo.lock 最易漏）
 #    RELEASE_NOTES.md 整体重写为「本版增量」，不要在旧内容后面追加
 # 2) 本地自检
 cargo test --manifest-path backend/Cargo.toml
@@ -472,12 +477,12 @@ Go 侧车能把 `vcs.revision` / `vcs.modified` 内嵌进二进制，审核者 `
 | 脚本 | 查什么 | 为什么必须有 |
 |---|---|---|
 | `_e2e.mjs` | 驱动**真实编译产物**跑完整协议：初始化、三档预设、翻格/插旗/压枪、越界夹取、`-32601`/`-32600`/`-32011`/`-32010`、重启后成绩仍在、32 并发不串响应 | 单测只证明函数逻辑；协议层与 stdio 编解码只有真进程能验 |
-| `_verify.mjs` | 解包核对 manifest/bin/ui 路径、`executable` 两端口径、版本号五处一致、包内无 CRLF/BOM、资源文件名全小写、仓库根有 `LICENSE`、真跑一次侧车探针 | 包结构错了，装上去就是"一片空白" |
+| `_verify.mjs` | 解包核对 manifest/bin/ui 路径、`executable` 两端口径、版本号六处一致、包内无 CRLF/BOM、资源文件名全小写、仓库根有 `LICENSE`、真跑一次侧车探针 | 包结构错了，装上去就是"一片空白" |
 | `_domcheck.py` | JS 引用的每个 DOM id 必须存在于 `index.html`；扫描前**先剥注释**再查禁用 API；编码与行尾 | 漏一个 id 就是运行时 `null`；不剥注释会把"解释为什么不用 localStorage"判成违规 |
 | `_releasecheck.py` | 发布链路静态闸门（见下） | `release.yml` 只有打 tag 才跑，错误要等到发版那一刻才暴露，代价是白等一轮 + 一个废 tag |
 | `_storecandidate.mjs` | 生成 dbx-store 扁平候选文件 + provenance 闸门 + schema 自检 | 格式错了商店 PR 直接红 |
 
-`_releasecheck.py` 覆盖：tag 触发过滤器必须是 glob 且能匹配当前版本、reusable 引用必须 pin 到 commit sha、`.artifact.json` 查找不能用 bash `**/`、reusable job 要有 `secrets: inherit` 与 `contents: write`、`gh` 必须带 `--repo`、Release 转正要 `--latest`、`concurrency.group` 必须含 `github.ref`、`GITHUB_REF` 守卫、`go-version` 必须显式关掉、`ci.yml` 与 `release.yml` 的工具链与 plugin-cli 版本必须一致且 pin 精确值、版本号五处一致、**宿主主题通道**（`onEnv` 存在、双注册 + capture、`themeObject`、`index.html` 脚本里不得自己写 `data-theme`）、**图标通道**（不得出现 `<img src>`；笑脸与哭脸两份内联 SVG **各自**与源文件一致，按 class 定位而非 viewBox）。
+`_releasecheck.py` 覆盖：tag 触发过滤器必须是 glob 且能匹配当前版本、reusable 引用必须 pin 到 commit sha、`.artifact.json` 查找不能用 bash `**/`、reusable job 要有 `secrets: inherit` 与 `contents: write`、`gh` 必须带 `--repo`、Release 转正要 `--latest`、`concurrency.group` 必须含 `github.ref`、`GITHUB_REF` 守卫、`go-version` 必须显式关掉、`ci.yml` 与 `release.yml` 的工具链与 plugin-cli 版本必须一致且 pin 精确值、版本号六处一致、**宿主主题通道**（`onEnv` 存在、双注册 + capture、`themeObject`、`index.html` 脚本里不得自己写 `data-theme`）、**图标通道**（不得出现 `<img src>`；笑脸与哭脸两份内联 SVG **各自**与源文件一致，按 class 定位而非 viewBox）。
 
 **每条守卫都必须反向验证**——把问题塞回去看它红不红。本会话两次抓到"永远通过"的假守卫：shell block 正则里 `.` 只匹配一个字符（整条检查静默失效）、panels.js 的判据用词表匹配（被注释里的字样骗过）。只会被动通过的闸门等于没有闸门。
 

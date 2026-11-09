@@ -47,6 +47,7 @@ RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 MANIFEST = ROOT / "manifest.json"
 CARGO = ROOT / "backend" / "Cargo.toml"
+CARGO_LOCK = ROOT / "backend" / "Cargo.lock"
 STORE_META = ROOT / ".dbx-store.json"
 NOTES = ROOT / "RELEASE_NOTES.md"
 BRIDGE = ROOT / "ui" / "bridge.js"
@@ -177,6 +178,27 @@ def main() -> int:
     cargo_version = re.search(r'^version = "([^"]+)"', read(CARGO), re.M)
     if not cargo_version or cargo_version.group(1) != version:
         problems.append(f"backend/Cargo.toml 的版本 {cargo_version and cargo_version.group(1)} 与 manifest.version {version} 不一致")
+
+    # 第六处同步点：Cargo.lock 里本包条目的 version（v0.1.3 首发漏改 → release 打包 101）。
+    # 包名从 Cargo.toml 现取，不写死，改名时守卫跟着走。
+    if not CARGO_LOCK.exists():
+        problems.append("缺少 backend/Cargo.lock（packager 需要它才会自动 --locked）")
+    elif cargo_version:
+        pkg_name = re.search(r'^name = "([^"]+)"', read(CARGO), re.M)
+        lock_version = None
+        if pkg_name:
+            lock_version = re.search(
+                r'^name = "' + re.escape(pkg_name.group(1)) + r'"\nversion = "([^"]+)"',
+                read(CARGO_LOCK),
+                re.M,
+            )
+        if not lock_version:
+            problems.append("backend/Cargo.lock 里找不到本包条目的 version")
+        elif lock_version.group(1) != version:
+            problems.append(
+                f"backend/Cargo.lock 本包条目版本 {lock_version.group(1)} 与 manifest.version {version} 不一致"
+                "（--locked 下打包必失败；cargo test 不带 --locked 查不出这条）"
+            )
 
     notes_head = read(NOTES).lstrip().splitlines()[0] if read(NOTES).strip() else ""
     if not notes_head.lstrip("# ").startswith(version):

@@ -221,7 +221,7 @@ async function main() {
     fail('仓库根目录缺少 manifest.json');
   }
 
-  // —— 仓库一致性（AGENTS.md 3.3：版本号必须五处一致，tag 由 CI 的 prepare job 校验）——
+  // —— 仓库一致性（AGENTS.md 3.3：版本号必须六处一致，tag 由 CI 的 prepare job 校验）——
   if (sourceManifest) {
     const version = sourceManifest.version;
 
@@ -235,6 +235,23 @@ async function main() {
       }
     } else {
       fail('缺少 backend/Cargo.toml');
+    }
+
+    // Cargo.lock 是第六处版本同步点（AGENTS.md 3.3）：packager 发现 lock 就自动
+    // --locked，lock 里本包版本停在旧值时 cargo 拒绝改写 → release 打包直接 101。
+    // CI 的裸 cargo test/build 不带 --locked 查不出来（v0.1.3 首发即栽在这）。
+    const lockPath = resolve('backend/Cargo.lock');
+    if (isFile(lockPath)) {
+      const lockMatch = /^name = "dbx-plugin-datasweep"\nversion = "([^"]+)"$/m.exec(
+        readFileSync(lockPath, 'utf8'),
+      );
+      if (!lockMatch) {
+        fail('backend/Cargo.lock 里找不到本包 dbx-plugin-datasweep 的 version 条目');
+      } else if (lockMatch[1] !== version) {
+        fail(`manifest.version(${version}) 与 backend/Cargo.lock 本包条目(${lockMatch[1]}) 不一致`);
+      }
+    } else {
+      fail('缺少 backend/Cargo.lock（packager 需要它才会自动 --locked）');
     }
 
     const notesPath = resolve('RELEASE_NOTES.md');
