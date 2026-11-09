@@ -288,13 +288,20 @@ DS.bridge = (function () {
     return { code: normalized.code, message: normalized.message };
   }
 
+  /**
+   * 错误展示文案。分层规则：
+   * - **已知错误码** → 走 i18n 字典（跟随宿主语言，zh/en 两套齐全）。
+   *   错误码的精确性由 unwrap() / failure() 保证：-32011（状态不允许）
+   *   不会再被兜成「侧车内部错误」——那是 unwrap() 没解包 {error} 年代的症状，
+   *   修复点在解包，不在这里绕开映射表。
+   * - **未知错误码**（侧车将来新增的码）→ 透传后端原始 message 兜底，
+   *   最后才退到通用文案，保证永远不会显示空白提示。
+   */
   function text(error) {
     var info = failure(error);
     var key = CODE_KEYS[String(info.code)];
-    // 业务状态错误记住原始 code：-32011 的语义应保留，避免再被改成通用文案；
-    // 用户看到的仍然是 i18n 文案。
-    if (key === 'errInternal') {
-      return info.message || DS.i18n.t('errDefault');
+    if (key) {
+      return DS.i18n.t(key);
     }
     return info.message || DS.i18n.t('errDefault');
   }
